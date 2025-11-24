@@ -58,6 +58,7 @@ If you leave the plugin configuration as is, `cli` is effectively "invisible" to
 
 
 
+# Why `mvn compile` works
 
 This works because `mvn compile` operates on **classes**, not JARs.
 
