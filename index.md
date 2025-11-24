@@ -54,24 +54,32 @@ With this change:
 ### Summary
 If you leave the plugin configuration as is, `cli` is effectively "invisible" to `stv-cli` during the build because of the `BOOT-INF` relocation. **Use the classifier approach (Scenario B)** to solve this immediately while keeping the ability to run the module.[1][2]
 
+
+
+
+
+
+This works because `mvn compile` operates on **classes**, not JARs.
+
+When you run `mvn compile` from the root (or even just on the modules), Maven's reactor does the following:
+
+1.  **Resolves Dependencies in the Reactor**: It sees that `stv-cli` depends on `cli`.
+2.  **Uses Build Output Directories**: Instead of looking for a packaged JAR file (fat or otherwise), the reactor directs `stv-cli` to look directly at `cli/target/classes`.
+3.  **Direct Class Access**: Since the `compile` phase happens *before* the `package` phase, the `spring-boot-maven-plugin` hasn't run yet. The classes in `cli/target/classes` are standard, unpackaged `.class` files, so `stv-cli` can read them perfectly fine.[1][2]
+
+### Why it fails later (in `unit-test` stage)
+The failure happens in the second stage because:
+1.  **Persistence is File-Based**: Your pipeline likely persists the `cli/target` directory as an artifact to pass it to the next stage.
+2.  **Reactor is Gone (or Reset)**: When Stage 2 starts, if it tries to resolve dependencies, it might look at the *packaged* artifact (the JAR) if the reactor state isn't perfectly preserved or if the command implies looking up dependencies.
+3.  **The "Poisoned" Artifact**: By the time Stage 1 finished, the `package` phase (if it ran implicitly or explicitly) ran the Spring Boot plugin, which moved the classes into `BOOT-INF/classes` inside the JAR.
+4.  **The Mismatch**: If Stage 2 tries to read the `cli.jar` (instead of the raw `target/classes` directory), it sees the "fat" structure, can't find the classes at the root, and fails.
+
+### In Summary
+*   **`mvn compile` works** because it reads raw class files from the disk before they are packaged.
+*   **`mvn test` (Stage 2) fails** because it likely reads the *completed* JAR file (which is now "fat" and broken for dependency use) or fails to reconstruct the reactor's raw class path mapping.
+
+This reinforces why **Scenario B (adding `<classifier>exec</classifier>`)** is the correct fix: it ensures that if Stage 2 ever reads the JAR file, it reads the "plain" original JAR, not the Spring Boot executable one.
+
 來源
-[1] Spring Boot Maven Plugin Documentation https://docs.spring.io/spring-boot/docs/3.2.4-SNAPSHOT/maven-plugin/reference/htmlsingle/
-[2] Add external library .jar to Spring boot .jar internal /lib - Stack Overflow https://stackoverflow.com/questions/30207842/add-external-library-jar-to-spring-boot-jar-internal-lib
-[3] spring-boot-maven-plugin repackage not including ... https://stackoverflow.com/questions/52248400/spring-boot-maven-plugin-repackage-not-including-dependancies
-[4] spring-boot-maven-plugin repackage not including ... https://github.com/spring-projects/spring-boot/issues/14455
-[5] Spring Boot Maven Plugin – spring-boot:repackage https://docs.spring.io/spring-boot/docs/2.2.8.RELEASE/maven-plugin/repackage-mojo.html
-[6] Use a spring boot application as a dependency with a non ... https://www.reddit.com/r/SpringBoot/comments/snmr05/use_a_spring_boot_application_as_a_dependency/
-[7] Packaging Executable Archives - Spring 中文文档 https://www.spring-doc.cn/spring-boot/3.4.5/maven-plugin_packaging.en.html
-[8] spring boot package does not exist error - Stack Overflow https://stackoverflow.com/questions/45479060/spring-boot-package-does-not-exist-error
-[9] Why another plugin to repack dependencies? https://basepom.github.io/repack-maven-plugin/release-1.0.2/why-repack.html
-[10] Spring Boot Maven Plugin – Repackage classifier https://docs.spring.io/spring-boot/docs/1.4.1.RELEASE/maven-plugin/examples/repackage-classifier.html
-[11] Document how to use BOOT-INF in spring-boot executable jar as a ... https://github.com/spring-projects/spring-boot/issues/6812
-[12] Difference Between spring-boot:repackage and Maven ... https://www.baeldung.com/spring-boot-repackage-vs-mvn-package
-[13] How to Fix Package Does Not Exist Error in Maven with IntelliJ for ... https://www.youtube.com/watch?v=cwvklfzv0Xw
-[14] Difference Between spring-boot:repackage and Maven ... https://www.geeksforgeeks.org/advance-java/difference-between-spring-bootrepackage-and-maven-package/
-[15] Spring Boot Maven Plugin Documentation https://docs.spring.io/spring-boot/docs/3.2.0-SNAPSHOT/maven-plugin/reference/htmlsingle/
-[16] Packaging Executable Archives :: Spring Boot - Maven Plugin https://docs.spring.io/spring-boot/maven-plugin/packaging.html
-[17] Add option for spring-boot-maven-plugin:repackage goal to ... https://github.com/spring-projects/spring-boot/issues/29390
-[18] Unable to use class from Custom Spring boot library - Stack Overflow https://stackoverflow.com/questions/69391540/unable-to-use-class-from-custom-spring-boot-library
-[19] No matter how I create my Spring boot project, IntelliJ is unable to ... https://www.reddit.com/r/IntelliJIDEA/comments/1bi5lcm/no_matter_how_i_create_my_spring_boot_project/
-[20] A Guide to Maven Artifact Classifiers | Baeldung https://www.baeldung.com/maven-artifact-classifiers
+[1] Introduction to the Build Lifecycle - Apache Maven https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
+[2] Maven Build Phases and Commands - GeeksforGeeks https://www.geeksforgeeks.org/advance-java/maven-build-phases-and-basic-maven-commands/
