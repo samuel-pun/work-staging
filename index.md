@@ -1,3 +1,5 @@
+[INFO] event=PriceResolution scenarioId=1 instrumentId=Instr_C level=INSTRUMENT_TYPE value=300.00 instrumentType=IT1 
+
  Yes, you should be concerned. This is very likely the root cause of your "package does not exist" error.
 
 ### The Problem
